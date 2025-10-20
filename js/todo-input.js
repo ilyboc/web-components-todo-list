@@ -10,7 +10,7 @@ templateTodoInput.innerHTML = `
     </form>
 `;
 
-class TodoInput extends HTMLElement {
+export class TodoInput extends HTMLElement {
     static observedAttributes = ['data-message'];
 
     constructor() {

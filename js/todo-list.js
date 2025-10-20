@@ -1,95 +1,99 @@
-const templateTodo = document.createElement('template');
-templateTodo.innerHTML = `
-    <section>
-        <todo-input></todo-input>
-        <ul id="list-container"></ul>
-    </section>
-`;
-
-const generateId = () => Date.now().toString() + Math.floor(Math.random() * 10000).toString();
-
-class TodoList extends HTMLElement {
+export class TodoList extends HTMLUListElement {
     constructor() {
         super();
-        // State
-        this._list = [
-            { id: generateId(), text: 'todo', description: 'My first todo', checked: false, color: 'red', tags: ['general'] },
-            { id: generateId(), text: 'Learn about Web Components', description: 'Study the basics of Web Components', checked: true, color: 'blue', tags: ['web', 'components'] },
-        ];
-
         // Bindings
-        this.addItem = this.addItem.bind(this);
-        this.checkDuplicate = this.checkDuplicate.bind(this);
         this.removeItem = this.removeItem.bind(this);
         this.toggleItem = this.toggleItem.bind(this);
+    }
 
-        this.appendChild(templateTodo.content.cloneNode(true));
-        this.$input = this.querySelector('todo-input');
-        this.$listContainer = this.querySelector('#list-container');
+    set data(value) {
+        if (this._data == null) {
+            this._data = value;
+        } else {
+            this._data = value;
+            this.update();
+        }
+    }
 
-        this.$input.addEventListener('onSubmit', this.addItem);
-        this.$input.addEventListener('onChange', this.checkDuplicate);
+    get data() {
+        return this._data;
     }
 
     connectedCallback() {
         this.render();
     }
 
-    addItem(e) {
-        console.log('Add item', this._cannotAdd);
-        if (this._cannotAdd) {
-            alert("Cannot add duplicated todo");
-            return;
-        }
-        this._list.push({ id: generateId(), text: e.detail, checked: false });
-        this.render();
-    }
-
-    checkDuplicate(e) {
-        const searchTerm = e.detail.trim();
-        if (searchTerm === '') return;
-        this._cannotAdd = this._list.find(item => item.text === searchTerm) != null;
-        if (this._cannotAdd) {
-            this.$input.setAttribute('data-message', "Todo already exists!");
-        } else {
-            this.$input.setAttribute('data-message', "");
-        }
-        // No need to re-render everything
-    }
+    disconnectedCallback() {}
 
     removeItem(e) {
-        this._list = this._list.filter(item => item.id != e.detail.dataset.key);
-        this.render();
+        this.data = this.data.filter(item => item.id != e.target.dataset.key);
+        this.$listContainer.removeChild(e.target);
+        this.dispatchEvent(new CustomEvent("onChange", {detail: structuredClone(this.data)}));
     }
 
     toggleItem(e) {
-        console.log('Toggle item', e.detail);
-        const item = this._list.find(item => item.id == e.detail.dataset.key);
+        const item = this.data.find(item => item.id == e.target.dataset.key);
         if (!item) return;
 
-        console.log(this._list)
         item.checked = !item.checked;
-        console.log(this._list)
-        this.render();
+        e.target.dataset.checked = item.checked ? 'true' : '';
+
+        this.dispatchEvent(new CustomEvent("onChange", {detail: structuredClone(this.data)}));
     }
 
-    disconnectedCallback() {
-        this.$input.removeEventListener('onSubmit', this.addItem);
+    createTodoItem(item) {
+        let $item = document.createElement('todo-item');
+        $item.dataset.checked = item.checked ? 'true' : '';
+        $item.dataset.key = item.id;
+        $item.data = structuredClone(item);
+
+        // Event listeners
+        $item.addEventListener('onRemove', this.removeItem);
+        $item.addEventListener('onRemoved', (e) => { alert("Removed Todo: " + e.target.data.text) });
+        $item.addEventListener('onToggle', this.toggleItem);
+
+        return $item;
+    }
+
+    update() {
+        console.log("Updating list...", this.data, this.children);
+        // Efficiently update the list by comparing children and data
+        let i = 0;
+        while (i < this.data.length || i < this.children.length) {
+            const item = this.data[i];
+            const child = this.children[i];
+
+            if (item && child) {
+                if (child.dataset.key === String(item.id)) {
+                    // Same item, update data
+                    child.data = structuredClone(item);
+                } else {
+                    // Different item, insert new todo before current child
+                    const newChild = this.createTodoItem(item);
+                    this.insertBefore(newChild, child);
+                }
+            } else if (item && !child) {
+                // No child, add new todo at the end
+                this.appendChild(this.createTodoItem(item));
+            } else if (!item && child) {
+                // No more items, remove extra children
+                this.removeChild(child);
+                // Don't increment i, as children shift left
+                continue;
+            }
+            i++;
+        }
     }
 
     render() {
-        if (!this.$listContainer) return;
-        this.$listContainer.innerHTML = '';
-        this._list.forEach((item, index) => {
-            let $item = document.createElement('todo-item');
-            $item.dataset.checked = item.checked ? 'true' : '';
-            $item.dataset.key = item.id;
-            $item.data = structuredClone(item);
-            $item.addEventListener('onRemove', this.removeItem);
-            $item.addEventListener('onToggle', this.toggleItem);
-            this.$listContainer.appendChild($item);
+        this.innerHTML = '';
+
+        const fragment = document.createDocumentFragment();
+        this.data.forEach((item) => {
+            fragment.appendChild(this.createTodoItem(item));
         });
+        this.appendChild(fragment);
     }
 }
 
-window.customElements.define('todo-list', TodoList);
+window.customElements.define('todo-list', TodoList, { extends: 'ul' });
